@@ -88,13 +88,15 @@ class GaussianDiffusion(nn.Module):
         self.loss_type = loss_type
         self.conditional = conditional
 
-        self.is_ddim_sampling = True
         self.num_timesteps = 2000
         self.sampling_timesteps = 200
         self.objective = 'pred_noise'
         self.ddim_sampling_eta = 0.0
         schedule_fn_kwargs = dict()
         auto_normalize = True
+
+        self.is_ddim_sampling = False
+        print("Utilizing ddim sampling?:", self.is_ddim_sampling)
 
         if schedule_opt is not None:
             pass
