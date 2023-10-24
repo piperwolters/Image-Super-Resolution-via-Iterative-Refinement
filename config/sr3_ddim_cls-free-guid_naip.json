@@ -2,7 +2,7 @@
     "name": "sr3_ddim_cls-free-guid_naip",
     "phase": "train", // train or val
     "gpu_ids": [
-        0,1
+        0
     ],
     "path": { //set the path
         "log": "experiments/sr3_ddim_cls-free-guid_naip/logs",
@@ -70,7 +70,7 @@
             "channels": 3, //sample channel
             "conditional": true, // unconditional generation or unconditional generation(super_resolution)
             "is_ddim_sampling": true,
-            "unconditional_guidance_scale": 2.0
+            "unconditional_guidance_scale": 1.5
 	}
     },
     "train": {

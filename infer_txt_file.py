@@ -1,4 +1,7 @@
 import torch
+import random
+from PIL import Image
+import skimage.io
 import data as Data
 import model as Model
 import argparse
@@ -8,13 +11,14 @@ import core.metrics as Metrics
 from core.wandb_logger import WandbLogger
 from tensorboardX import SummaryWriter
 import os
+from torchvision.transforms import functional as trans_fn
 
 import data.util as Util
 from metrics import *
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--data_txt', type=str, help="Path to a txt file with a list of naip filepaths.")
+    parser.add_argument('-data', '--data_txt', type=str, help="Path to a txt file with a list of naip filepaths.")
     parser.add_argument('-c', '--config', type=str, default='config/sr_sr3_64_512.json',
                         help='JSON file for configuration')
     parser.add_argument('-p', '--phase', type=str, choices=['val'], help='val(generation)', default='val')
@@ -22,12 +26,15 @@ if __name__ == "__main__":
     parser.add_argument('-debug', '-d', action='store_true')
     parser.add_argument('-enable_wandb', action='store_true')
     parser.add_argument('-log_infer', action='store_true')
+    parser.add_argument('-save_path', default='outputs')
     
     # parse configs
     args = parser.parse_args()
     opt = Logger.parse(args)
     # Convert to NoneDict, which return None for missing key.
     opt = Logger.dict_to_nonedict(opt)
+
+    save_path = args.save_path
 
     # logging
     torch.backends.cudnn.enabled = True
@@ -75,12 +82,14 @@ if __name__ == "__main__":
 
     avg_psnr, avg_ssim = [], []
 
+    n_s2_images = 8
     txt = open(args.data_txt)
     fps = txt.readlines()
     for idx,png in enumerate(fps):
         print("Processing....", idx)
 
         png = png.replace('\n', '')
+        png = png.replace('full_dataset', 'mturk_set')  # since full_dataset doesn't exist on this machine, just access subset mturk_set
 
         # Want to save the super-resolved imagery in the same filepath structure 
         # as the Sentinel-2 imagery, but in a different directory specified by args.save_path
@@ -101,7 +110,7 @@ if __name__ == "__main__":
         diffs = int(chip[0]) - s2_left_corner[0], int(chip[1]) - s2_left_corner[1]
 
         # Load and format S2 images as diffusion code expects.
-        s2_path = '/data/piperw/data/full_dataset/s2_condensed/' + str(tile[0])+'_'+str(tile[1]) + '/' + str(diffs[1])+'_'+str(diffs[0]) + '.png'
+        s2_path = '/data/piperw/data/mturk_set/s2_condensed/' + str(tile[0])+'_'+str(tile[1]) + '/' + str(diffs[1])+'_'+str(diffs[0]) + '.png'
         s2_images = skimage.io.imread(s2_path)
         s2_chunks = np.reshape(s2_images, (-1, 32, 32, 3))
 
@@ -110,6 +119,7 @@ if __name__ == "__main__":
             if [0, 0, 0] in ts:
                 bads.append(i)
             else:
+                goods.append(i)
         if len(goods) >= n_s2_images:
             rand_indices = random.sample(goods, n_s2_images)
         else:
@@ -119,13 +129,14 @@ if __name__ == "__main__":
         s2_chunks = [s2_chunks[i] for i in rand_indices]
         s2_chunks = np.array(s2_chunks)
         up_s2_chunk = torch.permute(torch.from_numpy(s2_chunks), (0, 3, 1, 2))
-        up_s2_chunk = trans_fn.resize(up_s2_chunk, self.output_size, Image.BICUBIC, antialias=True)
+        up_s2_chunk = trans_fn.resize(up_s2_chunk, (128,128), Image.BICUBIC, antialias=True)
         s2_chunks = torch.permute(up_s2_chunk, (0, 2, 3, 1)).numpy()
         [s2_chunks, img_HR] = Util.transform_augment(
-                        [s2_chunks, naip_chip], split=self.split, min_max=(-1, 1), multi_s2=True)
-        img_SR = torch.cat(s2_chunks)
+                        [s2_chunks, naip_chip], split='val',  min_max=(-1, 1), multi_s2=True)
+        img_SR = torch.cat(s2_chunks).unsqueeze(0)
+        img_HR = img_HR.unsqueeze(0)
 
-        val_data = {'HR': img_HR, 'SR': img_SR, 'Index': idx}
+        val_data = {'HR': img_HR, 'SR': img_SR, 'Index': torch.tensor(idx)}
 
         diffusion.feed_data(val_data)
         diffusion.test(continous=True)
@@ -159,7 +170,7 @@ if __name__ == "__main__":
         """
 
         sr_img = Metrics.tensor2img(visuals['SR'][:, -1, :, :, :])
-        Metrics.save_img(sr_img, save_dir + '/sr3.png')
+        Metrics.save_img(sr_img, save_dir + '/sr3_cfg.png')
 
         #Metrics.save_img(sr_img, '{}/{}_{}_sr.png'.format(result_path, current_step, idx))
         #Metrics.save_img(
