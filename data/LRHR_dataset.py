@@ -125,6 +125,11 @@ class LRHRDataset(Dataset):
                 self.val_fps.append(os.path.join(self.naip_path, fp))
 
         self.naip_chips = glob.glob(self.naip_path + '/**/*.png', recursive=True)
+
+        # NOTE: temporary code to train on just 1/100th of the available data
+        #if self.split == 'train':
+        #    self.naip_chips = random.sample(self.naip_chips, 11000)
+
         print("self.naip chips:", len(self.naip_chips), " self.naip_path:", self.naip_path)
 
         # Conditioning on S2.
@@ -219,6 +224,11 @@ class LRHRDataset(Dataset):
     def __getitem__(self, index):
         img_HR = None
         img_LR = None
+
+        # Classifier-free guidance, X% of the time we want to replace S2 images with black images 
+        # for "unconditional" generation during training. 
+        cfg = random.randint(0, 19)
+        uncond = True if self.split == 'train' and cfg in [0,1,2,3] else False
 
         # Conditioning on S2, or S2 and downsampled NAIP.
         if self.datatype == 's2' or self.datatype == 's2_and_downsampled_naip' or self.datatype == 'just-s2':
@@ -332,6 +342,10 @@ class LRHRDataset(Dataset):
                     else:
                         img_SR = torch.cat(s2_chunks)
 
+            # Classifier-free guidance step, replace S2 images with all black images.
+            if uncond:
+                img_SR = torch.zeros_like(img_SR)
+
             return {'HR': img_HR, 'SR': img_SR, 'Index': index}
 
         elif self.datatype == 'naip':
@@ -380,6 +394,10 @@ class LRHRDataset(Dataset):
             img_LR = torch.stack(lr_ims, dim=0)
             if not self.use_3d:
                 img_LR = torch.reshape(img_LR, (-1, 640,640))
+
+            # Classifier-free guidance step, replace S2 images with all black images.
+            if uncond:
+                img_LR = torch.zeros_like(img_LR)
 
             return {'HR': img_HR, 'SR': img_LR, 'Index': index}
 

@@ -76,7 +76,9 @@ class GaussianDiffusion(nn.Module):
         conditional=True,
         schedule_opt=None,
         output_size=512,
-        use_3d=False
+        use_3d=False,
+        is_ddim_sampling=False,
+        unconditional_guidance_scale=1.0
     ):
         super().__init__()
         self.channels = channels
@@ -95,7 +97,8 @@ class GaussianDiffusion(nn.Module):
         schedule_fn_kwargs = dict()
         auto_normalize = True
 
-        self.is_ddim_sampling = False
+        self.unconditional_guidance_scale = unconditional_guidance_scale
+        self.is_ddim_sampling = is_ddim_sampling
         print("Utilizing ddim sampling?:", self.is_ddim_sampling)
 
         if schedule_opt is not None:
@@ -180,6 +183,14 @@ class GaussianDiffusion(nn.Module):
 
         if inference:
             pred_noise = self.denoise_fn(torch.cat([condition_x, x], dim=1), noise_level)
+
+            ## NOTE: uncomment the following code if running inference with classifier free guidance
+            #uncond_condition_x = torch.zeros_like(condition_x).to(x.device) 
+            #uncond_pred_noise = self.denoise_fn(torch.cat([uncond_condition_x, x], dim=1), noise_level)
+
+            # e_t = pred_noise & uncond_e_t = uncond_pred_noise & w = unconditional_guidance_scale
+            #pred_noise = uncond_pred_noise + self.unconditional_guidance_scale * (pred_noise - uncond_pred_noise)
+
             x_recon = self.predict_start_from_noise(x, t=t, noise=pred_noise)
 
         else:
