@@ -123,6 +123,11 @@ class DDPM(BaseModel):
             out_dict['Downsampled_NAIP'] = self.data['SR'].detach().float().cpu()
             out_dict['SR'] = self.SR.detach().float().cpu()
             out_dict['HR'] = self.data['HR'].detach().float().cpu()
+        elif datatype == 'worldstrat':
+            s2 = self.data['SR']
+            out_dict['S2'] = s2.squeeze(0).detach().float().cpu()[0:3, :, :]
+            out_dict['SR'] = self.SR.detach().float().cpu()  # self.SR is the generated Superresolution
+            out_dict['HR'] = self.data['HR'].detach().float().cpu()  # self.data['HR'] is the original ground truth, high-res image
         return out_dict
 
     def print_network(self):

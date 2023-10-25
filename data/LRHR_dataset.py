@@ -1,4 +1,6 @@
 from io import BytesIO
+import torchvision
+from osgeo import gdal
 import lmdb
 from PIL import Image
 from torch.utils.data import Dataset
@@ -6,6 +8,7 @@ import random
 import data.util as Util
 import skimage.io
 import os
+import csv
 import random
 import cv2
 import json
@@ -16,6 +19,7 @@ from torch.utils.data import WeightedRandomSampler
 from torchvision.transforms import functional as trans_fn
 import glob
 
+totensor = torchvision.transforms.ToTensor()
 
 class CustomWeightedRandomSampler(WeightedRandomSampler):
     """
@@ -51,6 +55,50 @@ class LRHRDataset(Dataset):
         print("OUTPUT_SIZE:", self.output_size)
         print("DATAROOT:", dataroot)
 
+        # WorldStrat case
+        if datatype == 'worldstrat':
+            self.all_bands = False
+            self.use_3d = False
+
+            # Hardcoded paths to data and splits
+            self.splits_csv = '/data/piperw/worldstrat/dataset/stratified_train_val_test_split.csv'
+            self.lr_path = '/data/piperw/worldstrat/dataset/dataset_download/zenodo-version/lr_dataset/'
+            self.hr_path = '/data/piperw/worldstrat/dataset/dataset_download/zenodo-version/hr_dataset/'
+
+            # Read in the csv file containing splits and filter out non-relevant images for this split.
+            # Build a list of [hr_path, [lr_paths]] lists. 
+            self.datapoints = []
+            with open(self.splits_csv, newline='') as csvfile:
+                read = csv.reader(csvfile, delimiter=' ')
+                for i,row in enumerate(read):
+                    # Skip the row with columns.
+                    if i == 0:
+                        continue
+
+                    row = row[0].split(',')
+                    tile = row[1]
+                    split = row[-1]
+                    if split != self.split:
+                        continue
+
+                    # A few paths are missing even though specified in the split csv, so skip them.
+                    if not os.path.exists((os.path.join(self.lr_path, tile, 'L2A', tile+'-'+str(1)+'-L2A_data.tiff'))):
+                        continue
+
+                    # HR image for the current datapoint. Still using rgb as ground truth (instead of pansharpened).
+                    hr_img_path = os.path.join(self.hr_path, tile, tile+'_rgb.png')
+
+                    # Each HR image has 16 corresponding LR images.
+                    lrs = []
+                    for img in range(1, int(self.n_s2_images)+1):
+                        lr_img_path = os.path.join(self.lr_path, tile, 'L2A', tile+'-'+str(img)+'-L2A_data.tiff')
+                        lrs.append(lr_img_path)
+
+                    self.datapoints.append([hr_img_path, lrs])
+                print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
+                self.data_len = len(self.datapoints)
+            return
+
         # Paths to the imagery.
         self.s2_path = os.path.join(dataroot, 's2_condensed')
         if self.output_size == 512:
@@ -77,6 +125,11 @@ class LRHRDataset(Dataset):
                 self.val_fps.append(os.path.join(self.naip_path, fp))
 
         self.naip_chips = glob.glob(self.naip_path + '/**/*.png', recursive=True)
+
+        # NOTE: temporary code to train on just 1/100th of the available data
+        #if self.split == 'train':
+        #    self.naip_chips = random.sample(self.naip_chips, 11000)
+
         print("self.naip chips:", len(self.naip_chips), " self.naip_path:", self.naip_path)
 
         # Conditioning on S2.
@@ -107,32 +160,6 @@ class LRHRDataset(Dataset):
                 # Only add 'max_tiles' datapoints to the datapoints list if specified.
                 if self.max_tiles != -1 and len(self.datapoints) >= self.max_tiles:
                     break
-
-            #NOTE: hardcoded paths for when you want to run inference on specific tiles
-            """
-            self.datapoints = []
-            for i in range(16):
-                for j in range(16):
-                    self.datapoints.append(['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', str(i)+'_'+str(j)+'.png')])
-            self.datapoints = [
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '0_6.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '0_7.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '0_8.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '0_9.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '1_6.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '1_7.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '1_8.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '1_9.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '2_6.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '2_7.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '2_8.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '2_9.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '3_6.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '3_7.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '3_8.png')],
-                    ['/data/piperw/naip/', os.path.join(self.s2_path, '4792'+'_'+'3368', '3_9.png')]
-                    ]
-            """
 
             self.data_len = len(self.datapoints)
 
@@ -197,6 +224,11 @@ class LRHRDataset(Dataset):
     def __getitem__(self, index):
         img_HR = None
         img_LR = None
+
+        # Classifier-free guidance, X% of the time we want to replace S2 images with black images 
+        # for "unconditional" generation during training. 
+        cfg = random.randint(0, 19)
+        uncond = True if self.split == 'train' and cfg in [0,1,2,3] else False
 
         # Conditioning on S2, or S2 and downsampled NAIP.
         if self.datatype == 's2' or self.datatype == 's2_and_downsampled_naip' or self.datatype == 'just-s2':
@@ -310,6 +342,10 @@ class LRHRDataset(Dataset):
                     else:
                         img_SR = torch.cat(s2_chunks)
 
+            # Classifier-free guidance step, replace S2 images with all black images.
+            if uncond:
+                img_SR = torch.zeros_like(img_SR)
+
             return {'HR': img_HR, 'SR': img_SR, 'Index': index}
 
         elif self.datatype == 'naip':
@@ -325,6 +361,45 @@ class LRHRDataset(Dataset):
             [img_SR, img_HR] = Util.transform_augment([downsampled_naip, naip_chip], split=self.split, min_max=(-1, 1))
 
             return {'HR': img_HR, 'SR': img_SR, 'Index': index}
+
+        elif self.datatype == 'worldstrat':
+            hr_path, lr_paths = self.datapoints[index]
+
+            # High res
+            hr_im = skimage.io.imread(hr_path)[:, :, 0:3]
+            hr_im = cv2.resize(hr_im, (640, 640)) # NOTE: temporarily downsizing the HR image to match the SR image
+            hr_im = totensor(hr_im)
+            img_HR = hr_im
+
+	    # Load each of the LR images with gdal, since they're tifs.
+            lr_ims = []
+            for lr_path in lr_paths:
+                raster = gdal.Open(lr_path)
+                array = raster.ReadAsArray()
+
+                # If all_bands is specified, trying to replicate exact WorldStrat methodology,
+                # otherwise have option to run on RGB.
+                if self.all_bands:
+                    lr_im = array.transpose(1, 2, 0)
+                    lr_im = self.lr_transform(lr_im)
+                else:
+                    lr_im = array.transpose(1, 2, 0)[:, :, 1:4]
+
+                lr_ims.append(lr_im)
+
+            if not self.all_bands:
+                # Resize each Sentinel-2 image to the same spatial dimension.
+                lr_ims = [totensor(cv2.resize(im, (640,640))) for im in lr_ims]
+
+            img_LR = torch.stack(lr_ims, dim=0)
+            if not self.use_3d:
+                img_LR = torch.reshape(img_LR, (-1, 640,640))
+
+            # Classifier-free guidance step, replace S2 images with all black images.
+            if uncond:
+                img_LR = torch.zeros_like(img_LR)
+
+            return {'HR': img_HR, 'SR': img_LR, 'Index': index}
 
         else:
             img_HR = Image.open(self.hr_path[index]).convert("RGB")
