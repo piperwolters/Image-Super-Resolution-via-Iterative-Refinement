@@ -7,6 +7,7 @@ from torch.utils.data import Dataset
 import random
 import data.util as Util
 import skimage.io
+import cv2
 import os
 import csv
 import random
@@ -244,7 +245,8 @@ class LRHRDataset(Dataset):
                 naip_path, s2_path = datapoint[0], datapoint[1]
 
                 # Load the 512x512 NAIP chip.
-                naip_chip = skimage.io.imread(naip_path)
+                naip_chip = cv2.imread(naip_path)
+                #naip_chip = skimage.io.imread(naip_path)
 
                 # Check for black pixels (almost certainly invalid) and skip if found.
                 if [0, 0, 0] in naip_chip:
@@ -255,7 +257,8 @@ class LRHRDataset(Dataset):
                 # Load the T*32x32 S2 file.
                 # There are a few bad S2 paths, if caught then skip to the next one.
                 try:
-                    s2_images = skimage.io.imread(s2_path)
+                    s2_images = cv2.imread(s2_path)
+                    #s2_images = skimage.io.imread(s2_path)
                 except:
                     print(s2_path, " failed to load correctly.")
                     counter += 1
@@ -366,7 +369,8 @@ class LRHRDataset(Dataset):
             hr_path, lr_paths = self.datapoints[index]
 
             # High res
-            hr_im = skimage.io.imread(hr_path)[:, :, 0:3]
+            #hr_im = skimage.io.imread(hr_path)[:, :, 0:3]
+            hr_im = cv2.imread(hr_path)[:, :, 0:3]
             hr_im = cv2.resize(hr_im, (640, 640)) # NOTE: temporarily downsizing the HR image to match the SR image
             hr_im = totensor(hr_im)
             img_HR = hr_im
