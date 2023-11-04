@@ -5,11 +5,11 @@
         0
     ],
     "path": { //set the path
-        "log": "/data/piperw/experiments/18S2_naip128_urban/logs",
-        "tb_logger": "/data/piperw/experiments/18S2_naip128_urban/tb_logger",
-        "results": "/data/piperw/experiments/18S2_naip128_urban/results",
-        "checkpoint": "/data/piperw/experiments/18S2_naip128_urban/checkpoint",
-        "resume_state": null
+        "log": "/data/piperw/experiments/sr3_varying_num_s2_images/18S2_naip128_urban/logs",
+        "tb_logger": "/data/piperw/experiments/sr3_varying_num_s2_images/18S2_naip128_urban/tb_logger",
+        "results": "/data/piperw/experiments/sr3_varying_num_s2_images/18S2_naip128_urban/results",
+        "checkpoint": "/data/piperw/experiments/sr3_varying_num_s2_images/18S2_naip128_urban/checkpoint",
+        "resume_state": "/data/piperw/experiments/sr3_varying_num_s2_images/18S2_naip128_urban/checkpoint/I340000_E20"
     },
     "datasets": {
 	"output_size": 128,
@@ -20,7 +20,7 @@
             "batch_size": 64,
             "num_workers": 32,
             "use_shuffle": false,
-	    "tile_weights": "/data/piperw/tile_weights/full_dataset_weights.json",
+	    "tile_weights": "/data/piperw/tile_weights/urban_set_weights.json",
             "n_s2_images": 18  // if using S2 for condition, how many images per naip datapoint
         },
         "val": {
