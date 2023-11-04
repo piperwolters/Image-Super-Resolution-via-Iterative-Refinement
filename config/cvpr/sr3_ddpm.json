@@ -17,7 +17,7 @@
             "name": "S2-NAIP",
 	    "dataroot": "/data/piperw/data/urban_set/",
             "datatype": "s2", //img for naip reconstruction & LSUN, s2 for conditioning on just s2, s2_and_downsampled_naip for both
-            "batch_size": 128,
+            "batch_size": 256,
             "num_workers": 32,
             "use_shuffle": false,
 	    "tile_weights": "/data/piperw/data/tile_weights/urban_set_weights.json",
