@@ -89,7 +89,7 @@ if __name__ == "__main__":
         print("Processing....", idx)
 
         png = png.replace('\n', '')
-        png = png.replace('full_dataset', 'mturk_set')  # since full_dataset doesn't exist on this machine, just access subset mturk_set
+        png = png.replace('urban_set', 'mturk_urban_set')  # since full_dataset doesn't exist on this machine, just access subset mturk_set
 
         # Want to save the super-resolved imagery in the same filepath structure 
         # as the Sentinel-2 imagery, but in a different directory specified by args.save_path
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         diffs = int(chip[0]) - s2_left_corner[0], int(chip[1]) - s2_left_corner[1]
 
         # Load and format S2 images as diffusion code expects.
-        s2_path = '/data/piperw/data/mturk_set/s2_condensed/' + str(tile[0])+'_'+str(tile[1]) + '/' + str(diffs[1])+'_'+str(diffs[0]) + '.png'
+        s2_path = '/data/piperw/data/mturk_urban_set/s2_condensed/' + str(tile[0])+'_'+str(tile[1]) + '/' + str(diffs[1])+'_'+str(diffs[0]) + '.png'
         s2_images = skimage.io.imread(s2_path)
         s2_chunks = np.reshape(s2_images, (-1, 32, 32, 3))
 
@@ -170,7 +170,7 @@ if __name__ == "__main__":
         """
 
         sr_img = Metrics.tensor2img(visuals['SR'][:, -1, :, :, :])
-        Metrics.save_img(sr_img, save_dir + '/sr3_cfg.png')
+        Metrics.save_img(sr_img, save_dir + '/sr3.png')
 
         #Metrics.save_img(sr_img, '{}/{}_{}_sr.png'.format(result_path, current_step, idx))
         #Metrics.save_img(
