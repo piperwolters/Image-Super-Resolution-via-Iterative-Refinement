@@ -16,6 +16,7 @@ import json
 import glob
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import WeightedRandomSampler
 from torchvision.transforms import functional as trans_fn
 import glob
@@ -99,6 +100,28 @@ class LRHRDataset(Dataset):
                 print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
                 self.data_len = len(self.datapoints)
             return
+        elif datatype == 'sen2venus':
+            self.output_size = 256
+            data_root = '/data/piperw/data/sen2venus/' 
+            hr_fps = glob.glob(data_root + '**/*_05m_b2b3b4b8.pt')
+
+            # Filter filepaths based on if the split is train or validation.
+            if self.split == 'train':
+                hr_fps = [hr_fp for hr_fp in hr_fps if not ('JAM2018' in hr_fp or 'BENGA' in hr_fp or 'SO2' in hr_fp)]
+            else:
+                hr_fps = [hr_fp for hr_fp in hr_fps if ('JAM2018' in hr_fp or 'BENGA' in hr_fp or 'SO2' in hr_fp)]
+
+            lr_fps = [hr.replace('05m', '10m') for hr in hr_fps]
+
+            self.datapoints = []
+            for i,hr_fp in enumerate(hr_fps):
+                load_tensor = torch.load(hr_fp)
+                num_patches = load_tensor.shape[0]
+                self.datapoints.extend([[hr_fp, lr_fps[i], patch] for patch in range(num_patches)])
+
+            print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
+            self.data_len = len(self.datapoints)
+        return 
 
         # Paths to the imagery.
         self.s2_path = os.path.join(dataroot, 's2_condensed')
@@ -403,6 +426,20 @@ class LRHRDataset(Dataset):
             if uncond:
                 img_LR = torch.zeros_like(img_LR)
 
+            return {'HR': img_HR, 'SR': img_LR, 'Index': index}
+
+        elif self.datatype == 'sen2venus':
+            hr_path, lr_path, patch_num = self.datapoints[index]
+
+            hr_tensor = torch.load(hr_path)[patch_num, :3, :, :].float()
+            lr_tensor = torch.load(lr_path)[patch_num, :3, :, :].float()
+            lr_tensor = F.interpolate(lr_tensor.unsqueeze(0), (256, 256)).squeeze(0)
+
+            if self.use_3d:
+                lr_tensor = lr_tensor.unsqueeze(0)
+
+            img_HR = hr_tensor
+            img_LR = lr_tensor
             return {'HR': img_HR, 'SR': img_LR, 'Index': index}
 
         else:
