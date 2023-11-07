@@ -16,6 +16,7 @@ import json
 import glob
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import WeightedRandomSampler
 from torchvision.transforms import functional as trans_fn
 import glob
@@ -98,6 +99,46 @@ class LRHRDataset(Dataset):
                     self.datapoints.append([hr_img_path, lrs])
                 print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
                 self.data_len = len(self.datapoints)
+            return
+        elif datatype == 'sen2venus':
+            self.output_size = 256
+            data_root = '/data/piperw/data/sen2venus/' 
+            hr_fps = glob.glob(data_root + '**/*_05m_b2b3b4b8.pt')
+
+            # Filter filepaths based on if the split is train or validation.
+            if self.split == 'train':
+                hr_fps = [hr_fp for hr_fp in hr_fps if not ('JAM2018' in hr_fp or 'BENGA' in hr_fp or 'SO2' in hr_fp)]
+            else:
+                hr_fps = [hr_fp for hr_fp in hr_fps if ('JAM2018' in hr_fp or 'BENGA' in hr_fp or 'SO2' in hr_fp)]
+
+            lr_fps = [hr.replace('05m', '10m') for hr in hr_fps]
+
+            self.datapoints = []
+            for i,hr_fp in enumerate(hr_fps):
+                load_tensor = torch.load(hr_fp)
+                num_patches = load_tensor.shape[0]
+                self.datapoints.extend([[hr_fp, lr_fps[i], patch] for patch in range(num_patches)])
+
+            print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
+            self.data_len = len(self.datapoints)
+            return
+        elif datatype == 'oli2msi':
+            self.output_size = 480
+            self.data_root = '/data/piperw/data/OLI2MSI/'
+
+            if self.split == 'train':
+                hr_fps = glob.glob(self.data_root + 'train_hr/*.TIF')
+                lr_fps = [hr_fp.replace('train_hr', 'train_lr') for hr_fp in hr_fps]
+            else:
+                hr_fps = hr_fps = glob.glob(self.data_root + 'test_hr/*.TIF')
+                lr_fps = [hr_fp.replace('test_hr', 'test_lr') for hr_fp in hr_fps]
+
+            self.datapoints = []
+            for i,hr_fp in enumerate(hr_fps):
+                self.datapoints.append([hr_fp, lr_fps[i]])
+
+            print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
+            self.data_len = len(self.datapoints)
             return
 
         # Paths to the imagery.
@@ -405,6 +446,38 @@ class LRHRDataset(Dataset):
 
             return {'HR': img_HR, 'SR': img_LR, 'Index': index}
 
+        elif self.datatype == 'sen2venus':
+            hr_path, lr_path, patch_num = self.datapoints[index]
+
+            hr_tensor = torch.load(hr_path)[patch_num, :3, :, :].float()
+            lr_tensor = torch.load(lr_path)[patch_num, :3, :, :].float()
+            lr_tensor = F.interpolate(lr_tensor.unsqueeze(0), (256, 256)).squeeze(0)
+
+            if self.use_3d:
+                lr_tensor = lr_tensor.unsqueeze(0)
+
+            img_HR = hr_tensor
+            img_LR = lr_tensor
+            return {'HR': img_HR, 'SR': img_LR, 'Index': index}
+		
+        elif self.datatype == 'oli2msi':
+            hr_path, lr_path = self.datapoints[index]
+
+            hr_ds = gdal.Open(hr_path)
+            hr_arr = np.array(hr_ds.ReadAsArray())
+            hr_tensor = torch.tensor(hr_arr).float()
+
+            lr_ds = gdal.Open(lr_path)
+            lr_arr = np.array(lr_ds.ReadAsArray())
+            lr_tensor = torch.tensor(lr_arr).float()
+            lr_tensor = F.interpolate(lr_tensor.unsqueeze(0), (480, 480)).squeeze(0)
+
+            if self.use_3d:
+                lr_tensor = lr_tensor.unsqueeze(0)
+
+            img_HR = hr_tensor
+            img_LR = lr_tensor
+            return {'HR': img_HR, 'SR': img_LR, 'Index': index}
         else:
             img_HR = Image.open(self.hr_path[index]).convert("RGB")
             img_SR = Image.open(self.sr_path[index]).convert("RGB")
