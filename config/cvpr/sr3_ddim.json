@@ -2,14 +2,14 @@
     "name": "sr3_ddim",
     "phase": "train", // train or val
     "gpu_ids": [
-        0,1,2,3
+        0,1,2,3,4,5,6,7
     ],
     "path": { //set the path
         "log": "experiments/cvpr/sr3_ddim/logs",
         "tb_logger": "experiments/cvpr/sr3_ddim_baseline/tb_logger",
         "results": "experiments/cvpr/sr3_ddim/results",
         "checkpoint": "experiments/cvpr/sr3_ddim/checkpoint",
-        "resume_state": null //"experiments/sr3_ddpm_baseline/checkpoint/last"
+        "resume_state": "experiments/cvpr/sr3_ddim/checkpoint/last"
     },
     "datasets": {
 	"output_size": 128,
@@ -17,8 +17,8 @@
             "name": "S2-NAIP",
 	    "dataroot": "/data/piperw/data/urban_set/",
             "datatype": "s2", //img for naip reconstruction & LSUN, s2 for conditioning on just s2, s2_and_downsampled_naip for both
-            "batch_size": 256,
-            "num_workers": 32,
+            "batch_size": 64,
+            "num_workers": 8,
             "use_shuffle": false,
 	    "tile_weights": "/data/piperw/data/tile_weights/urban_set_weights.json",
             "n_s2_images": 8  // if using S2 for condition, how many images per naip datapoint
