@@ -121,7 +121,25 @@ class LRHRDataset(Dataset):
 
             print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
             self.data_len = len(self.datapoints)
-        return 
+            return
+        elif datatype == 'oli2msi':
+            self.output_size = 480
+            self.data_root = '/data/piperw/data/OLI2MSI/'
+
+            if self.split == 'train':
+                hr_fps = glob.glob(self.data_root + 'train_hr/*.TIF')
+                lr_fps = [hr_fp.replace('train_hr', 'train_lr') for hr_fp in hr_fps]
+            else:
+                hr_fps = hr_fps = glob.glob(self.data_root + 'test_hr/*.TIF')
+                lr_fps = [hr_fp.replace('test_hr', 'test_lr') for hr_fp in hr_fps]
+
+            self.datapoints = []
+            for i,hr_fp in enumerate(hr_fps):
+                self.datapoints.append([hr_fp, lr_fps[i]])
+
+            print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
+            self.data_len = len(self.datapoints)
+            return
 
         # Paths to the imagery.
         self.s2_path = os.path.join(dataroot, 's2_condensed')
@@ -441,7 +459,25 @@ class LRHRDataset(Dataset):
             img_HR = hr_tensor
             img_LR = lr_tensor
             return {'HR': img_HR, 'SR': img_LR, 'Index': index}
+		
+        elif self.datatype == 'oli2msi':
+            hr_path, lr_path = self.datapoints[index]
 
+            hr_ds = gdal.Open(hr_path)
+            hr_arr = np.array(hr_ds.ReadAsArray())
+            hr_tensor = torch.tensor(hr_arr).float()
+
+            lr_ds = gdal.Open(lr_path)
+            lr_arr = np.array(lr_ds.ReadAsArray())
+            lr_tensor = torch.tensor(lr_arr).float()
+            lr_tensor = F.interpolate(lr_tensor.unsqueeze(0), (480, 480)).squeeze(0)
+
+            if self.use_3d:
+                lr_tensor = lr_tensor.unsqueeze(0)
+
+            img_HR = hr_tensor
+            img_LR = lr_tensor
+            return {'HR': img_HR, 'SR': img_LR, 'Index': index}
         else:
             img_HR = Image.open(self.hr_path[index]).convert("RGB")
             img_SR = Image.open(self.sr_path[index]).convert("RGB")

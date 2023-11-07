@@ -174,7 +174,7 @@ class UNet(nn.Module):
     ):
         super().__init__()
 
-        image_size=256  # NOTE: TEMPORARY
+        image_size=480  # NOTE: TEMPORARY
 
         if with_noise_level_emb:
             noise_level_channel = inner_channel
