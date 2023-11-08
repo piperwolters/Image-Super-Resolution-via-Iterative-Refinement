@@ -83,8 +83,9 @@ class GaussianDiffusion(nn.Module):
         super().__init__()
         self.channels = channels
         self.image_size = image_size
-        self.output_size = output_size  # is this the same as image_size?
         self.use_3d = use_3d
+
+        self.output_size = 128  # NOTE: this is annoyingly hardcoded; fix later
 
         self.denoise_fn = denoise_fn
         self.loss_type = loss_type
