@@ -465,12 +465,13 @@ class LRHRDataset(Dataset):
 
             hr_ds = gdal.Open(hr_path)
             hr_arr = np.array(hr_ds.ReadAsArray())
+            hr_arr = np.transpose(cv2.resize(np.transpose(hr_arr, (1, 2, 0)), (320, 320)), (2, 0, 1))
             hr_tensor = torch.tensor(hr_arr).float()
 
             lr_ds = gdal.Open(lr_path)
             lr_arr = np.array(lr_ds.ReadAsArray())
             lr_tensor = torch.tensor(lr_arr).float()
-            lr_tensor = F.interpolate(lr_tensor.unsqueeze(0), (480, 480)).squeeze(0)
+            lr_tensor = F.interpolate(lr_tensor.unsqueeze(0), (320, 320)).squeeze(0)
 
             if self.use_3d:
                 lr_tensor = lr_tensor.unsqueeze(0)
