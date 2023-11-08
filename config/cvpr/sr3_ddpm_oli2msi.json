@@ -9,7 +9,7 @@
         "tb_logger": "experiments/cvpr/sr3_ddpm_oli2msi/tb_logger",
         "results": "experiments/cvpr/sr3_ddpm_oli2msi/results",
         "checkpoint": "experiments/cvpr/sr3_ddpm_oli2msi/checkpoint",
-        "resume_state": null //"experiments/sr3_ddpm_baseline/checkpoint/last"
+        "resume_state": null //"experiments/cvpr/sr3_ddpm_oli2msi/checkpoint/I4000_E25"
     },
     "datasets": {
 	"output_size": 128,
