@@ -1,38 +1,40 @@
 {
-    "name": "sr3_ddpm_sen2venus",
+    "name": "sr3_ddpm_probav",
     "phase": "train", // train or val
     "gpu_ids": [
-        0,1,2,3,4,5,6,7
+        0
     ],
     "path": { //set the path
-        "log": "experiments/cvpr/sr3_ddpm_sen2venus/logs",
-        "tb_logger": "experiments/cvpr/sr3_ddpm_sen2venus/tb_logger",
-        "results": "experiments/cvpr/sr3_ddpm_sen2venus/results",
-        "checkpoint": "experiments/cvpr/sr3_ddpm_sen2venus/checkpoint",
-        "resume_state": "experiments/cvpr/sr3_ddpm_sen2venus/checkpoint/I10000_E11"
+        "log": "experiments/cvpr/sr3_ddpm_probav/logs",
+        "tb_logger": "experiments/cvpr/sr3_ddpm_probav/tb_logger",
+        "results": "experiments/cvpr/sr3_ddpm_probav/results",
+        "checkpoint": "experiments/cvpr/sr3_ddpm_probav/checkpoint",
+        "resume_state": null //"experiments/cvpr/sr3_ddpm_probav/checkpoint/"
     },
     "datasets": {
 	"output_size": 128,
         "train": {
-            "name": "Sen2Venus",
-	    "dataroot": "/data/piperw/data/sen2venus/",
-            "datatype": "sen2venus", //img for naip reconstruction & LSUN, s2 for conditioning on just s2, s2_and_downsampled_naip for both
-            "batch_size": 32,
-            "num_workers": 8,
+            "name": "PROBAV",
+	    "dataroot": "/data/piperw/data/PROBA-V/",
+            "datatype": "probav", //img for naip reconstruction & LSUN, s2 for conditioning on just s2, s2_and_downsampled_naip for both
+            "batch_size": 64,
+            "num_workers": 16,
+	    "n_s2_images": 9,
             "use_shuffle": true
         },
         "val": {
-            "name": "Sen2Venus",
-            "dataroot": "/data/piperw/data/sen2venus/",
-            "datatype": "sen2venus", //img for naip reconstruction & LSUN, s2 for conditioning on just s2, s2_and_downsampled_naip for both
-	    "use_shuffle": false
+            "name": "PROBAV",
+            "dataroot": "/data/piperw/data/PROBA-V/",
+            "datatype": "probav", //img for naip reconstruction & LSUN, s2 for conditioning on just s2, s2_and_downsampled_naip for both
+	    "use_shuffle": false,
+	    "n_s2_images": 9
         }
     },
     "model": {
         "which_model_G": "sr3", // use the ddpm or sr3 network structure
         "finetune_norm": false,
         "unet": {
-            "in_channel": 6,
+            "in_channel": 30,
             "out_channel": 3,
             "inner_channel": 64,
             "channel_multiplier": [
@@ -63,7 +65,7 @@
             }
         },
         "diffusion": {
-	    "image_size": 256,
+	    "image_size": 128,
             "channels": 3, //sample channel
             "conditional": true, // unconditional generation or unconditional generation(super_resolution)
             "is_ddim_sampling": false
@@ -73,7 +75,7 @@
         "n_iter": 10000000,
         "val_freq": 2e4,
         "save_checkpoint_freq": 2e3,
-        "print_freq": 2000,
+        "print_freq": 500,
         "optimizer": {
             "type": "adam",
             "lr": 1e-4

@@ -11,9 +11,12 @@ import core.metrics as Metrics
 from core.wandb_logger import WandbLogger
 from tensorboardX import SummaryWriter
 import os
+import torchvision
 from torchvision.transforms import functional as trans_fn
 from osgeo import gdal
 import torch.nn.functional as F
+
+totensor = torchvision.transforms.ToTensor()
 
 import data.util as Util
 from metrics import *
@@ -28,15 +31,12 @@ if __name__ == "__main__":
     parser.add_argument('-debug', '-d', action='store_true')
     parser.add_argument('-enable_wandb', action='store_true')
     parser.add_argument('-log_infer', action='store_true')
-    parser.add_argument('-save_path', default='outputs')
     
     # parse configs
     args = parser.parse_args()
     opt = Logger.parse(args)
     # Convert to NoneDict, which return None for missing key.
     opt = Logger.dict_to_nonedict(opt)
-
-    save_path = args.save_path
 
     # logging
     torch.backends.cudnn.enabled = True
@@ -87,6 +87,7 @@ if __name__ == "__main__":
     device = torch.device('cuda')
 
     data_txt = args.data_txt
+    save_path = ''
     if 'oli2msi' in data_txt:
         datatype = 'oli2msi'
         base_path = '/data/piperw/data/OLI2MSI/'
@@ -96,12 +97,20 @@ if __name__ == "__main__":
         datatype = 'sen2venus'
         base_path = '/data/piperw/data/sen2venus/'
         save_path = '/data/piperw/cvpr_outputs/sen2venus/'
+    elif 'held_out_txt' in data_txt:
+        datatype = 'naip-s2'
+        base_path = '/data/piperw/data/held_out_set/'
+        save_path = '/data/piperw/cvpr_outputs/held_out_set/'
+    elif 'probav' in data_txt:
+        datatype = 'probav'
+        base_path = '/data/piperw/data/PROBA-V/train/NIR/val/'
+        save_path = '/data/piperw/cvpr_outputs/probav/'
     else:
         datatype = 'naip-s2'
         base_path = '/data/piperw/data/val_set/'
     print("Datatype:", datatype)
 
-    n_s2_images = 8
+    n_s2_images = 9
     txt = open(data_txt)
     fps = txt.readlines()
     for idx,png in enumerate(fps):
@@ -120,8 +129,8 @@ if __name__ == "__main__":
             os.makedirs(save_dir, exist_ok=True)
 
             # Load and format NAIP image as diffusion code expects.
-            naip_chip = skimage.io.imread(png)
-            #skimage.io.imsave(save_dir + '/naip.png', naip_im)
+            naip_chip = skimage.io.imread(base_path + 'naip_128/' + png)
+            skimage.io.imsave(save_dir + '/naip.png', naip_chip)
 
             chip = chip.split('_')
             tile = int(chip[0]) // 16, int(chip[1]) // 16
@@ -213,8 +222,48 @@ if __name__ == "__main__":
                 fake_img = Metrics.tensor2img(visuals['INF'])  # uint8
 
                 sr_img = Metrics.tensor2img(visuals['SR'])
-                Metrics.save_img(sr_img, save_dir + '/sr3.png')
+                Metrics.save_img(sr_img, save_dir + '/sr3_ddpm.png')
 
+            continue
+
+        elif datatype == 'probav':
+            save_dir = os.path.join(save_path, str(idx))
+            os.makedirs(save_dir, exist_ok=True)
+
+            hr_path = base_path + png
+
+            lr_paths = []
+            for i in range(n_s2_images):
+                if i < 10:
+                    lr = hr_path.replace('HR', 'LR00' + str(i))
+                else:
+                    lr = hr_path.replace('HR', 'LR0' + str(i))
+                lr_paths.append(lr)
+
+            hr_im = cv2.imread(hr_path)
+            hr_im = cv2.resize(hr_im, (128,128))  # resize from (384,384) to (128,128) to speed up training
+            hr_tensor = totensor(hr_im)
+
+            lr_ims = []
+            for lr_path in lr_paths:
+                lr_im = cv2.imread(lr_path)
+                lr_tensor = totensor(lr_im)
+                lr_ims.append(lr_tensor)
+
+            img_LR = torch.cat(lr_ims).unsqueeze(0)
+            img_HR = hr_tensor
+
+            val_data = {'HR': img_HR, 'SR': img_LR, 'Index': torch.tensor(idx)}
+
+            diffusion.feed_data(val_data)
+            diffusion.test(continous=False)
+            visuals = diffusion.get_current_visuals(need_LR=False)
+
+            hr_img = Metrics.tensor2img(visuals['HR'])  # uint8
+            fake_img = Metrics.tensor2img(visuals['INF'])  # uint8
+
+            sr_img = Metrics.tensor2img(visuals['SR'])
+            Metrics.save_img(sr_img, save_dir + '/sr3_ddpm.png')
             continue
 
         val_data = {'HR': img_HR, 'SR': img_SR, 'Index': torch.tensor(idx)}
@@ -228,7 +277,7 @@ if __name__ == "__main__":
 
         sr_img = Metrics.tensor2img(visuals['SR'])
         #sr_img = Metrics.tensor2img(visuals['SR'][:, -1, :, :, :])
-        Metrics.save_img(sr_img, save_dir + '/sr3.png')
+        Metrics.save_img(sr_img, save_dir + '/sr3_ddpm.png')
 
         eval_psnr = calculate_psnr(hr_img, sr_img, 0)
         eval_ssim = calculate_ssim(hr_img, sr_img, 0)

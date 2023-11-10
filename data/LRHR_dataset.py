@@ -119,7 +119,7 @@ class LRHRDataset(Dataset):
                 num_patches = load_tensor.shape[0]
                 self.datapoints.extend([[hr_fp, lr_fps[i], patch] for patch in range(num_patches)])
 
-            print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
+            print("Loaded ", len(self.datapoints), " SEN2Venus datapoints.")
             self.data_len = len(self.datapoints)
             return
         elif datatype == 'oli2msi':
@@ -137,7 +137,35 @@ class LRHRDataset(Dataset):
             for i,hr_fp in enumerate(hr_fps):
                 self.datapoints.append([hr_fp, lr_fps[i]])
 
-            print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
+            print("Loaded ", len(self.datapoints), " OLI2MSI datapoints.")
+            self.data_len = len(self.datapoints)
+            return
+
+        elif datatype == 'probav':
+            self.output_size = 120
+            self.data_root = '/data/piperw/data/PROBA-V/'
+
+            hr_fps = glob.glob(self.data_root + 'train/NIR/*/HR.png')
+
+            # Filter filepaths based on if the split is train or validation.
+            if self.split == 'train':
+                hr_fps = glob.glob(self.data_root + 'train/NIR/*/HR.png')
+            else:
+                hr_fps = glob.glob(self.data_root + 'train/NIR/val/*/HR.png')
+
+            self.datapoints = []
+            lr_fps = []
+            for hr_fp in hr_fps:
+                lrs = []
+                for i in range(self.n_s2_images):
+                    if i < 10:
+                        lr = hr_fp.replace('HR', 'LR00' + str(i))
+                    else:
+                        lr = hr_fp.replace('HR', 'LR0' + str(i))
+                    lrs.append(lr)
+                self.datapoints.append([hr_fp, lrs])
+
+            print("Loaded ", len(self.datapoints), " PROBA-V datapoints.")
             self.data_len = len(self.datapoints)
             return
 
@@ -479,6 +507,39 @@ class LRHRDataset(Dataset):
             img_HR = hr_tensor
             img_LR = lr_tensor
             return {'HR': img_HR, 'SR': img_LR, 'Index': index}
+
+        elif self.datatype == 'probav':
+            hr_path, lr_paths  = self.datapoints[index]
+
+            hr_im = cv2.imread(hr_path)
+            
+            # Take a random 32,32 chunk; Goal will be to upsample by x2.
+            rand_start_x = random.randint(0, 255)
+            rand_start_y = random.randint(0, 255)
+            hr_im = hr_im[rand_start_x:rand_start_x+128, rand_start_y:rand_start_y+128, :]
+
+            hr_tensor = totensor(hr_im)
+
+            lr_start_x = int(rand_start_x // 4)
+            lr_start_y = int(rand_start_y // 4)
+
+            lr_ims = []
+            for lr_path in lr_paths:
+                lr_im = cv2.imread(lr_path)
+                lr_im = lr_im[lr_start_x:lr_start_x+32, lr_start_y:lr_start_y+32, :]
+                lr_im = cv2.resize(lr_im, (128,128))
+                lr_tensor = totensor(lr_im)
+                lr_ims.append(lr_tensor)
+
+            if self.use_3d:
+                img_LR = torch.stack(lr_ims)
+            else:
+                img_LR = torch.cat(lr_ims)
+
+            img_HR = hr_tensor
+
+            return {'HR': img_HR, 'SR': img_LR, 'Index': index}
+
         else:
             img_HR = Image.open(self.hr_path[index]).convert("RGB")
             img_SR = Image.open(self.sr_path[index]).convert("RGB")
