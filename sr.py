@@ -128,6 +128,8 @@ if __name__ == "__main__":
                 diffusion.feed_data(train_data)
                 diffusion.optimize_parameters()
 
+                print("current step:", current_step)
+
                 # log
                 if current_step % opt['train']['print_freq'] == 0:
                     logs = diffusion.get_current_log()

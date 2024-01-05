@@ -1,5 +1,11 @@
 import cv2
 import numpy as np
+import clip
+import torch
+import open_clip
+import torch.nn.functional as F
+import lpips
+
 
 def calculate_psnr(img, img2, crop_border, input_order='HWC', test_y_channel=False, **kwargs):
     """Calculate PSNR (Peak Signal-to-Noise Ratio).
@@ -181,4 +187,49 @@ def _ssim(img, img2):
     ssim_map = ((2 * mu1_mu2 + c1) * (2 * sigma12 + c2)) / ((mu1_sq + mu2_sq + c1) * (sigma1_sq + sigma2_sq + c2))
     return ssim_map.mean()
 
+def calculate_clipscore(img, img2, clip_model, **kwargs):
+    device = torch.device('cuda')
 
+    if clip_model == 'clip-ViT-B/16':
+        model, _ = clip.load("ViT-B/16", device=device)
+        img_size = (224,224)
+    elif clip_model == 'clipa-ViT-bigG-14':
+        model, _, _ = open_clip.create_model_and_transforms('ViT-bigG-14-CLIPA-336', pretrained='datacomp1b')
+        model = model.to(device)
+        img_size = (336,336)
+    elif clip_model == 'siglip-ViT-SO400M-14':
+        model, _, _ = open_clip.create_model_and_transforms('ViT-SO400M-14-SigLIP-384', pretrained='webli')
+        model = model.to(device)
+        img_size = (384,384)
+    else:
+        print(clip_model, " is not supported for CLIPScore.")
+
+    tensor1 = torch.as_tensor(img).permute(2, 0, 1)
+    tensor1 = tensor1.unsqueeze(0).to(device).float()/255
+    tensor2 = torch.as_tensor(img2).permute(2, 0, 1)
+    tensor2 = tensor2.unsqueeze(0).to(device).float()/255
+
+    tensor1 = F.interpolate(tensor1, img_size)
+    tensor2 = F.interpolate(tensor2, img_size)
+
+    feats1 = model.encode_image(tensor1)
+    feats2 = model.encode_image(tensor2)
+
+    clip_score = F.cosine_similarity(feats1, feats2).detach().item()
+    return clip_score
+
+def calculate_lpips(img, img2, lpips_model, **kwargs):
+    device = torch.device('cuda')
+
+    if lpips_model == 'alexnet':
+        lpips_loss_fn = lpips.LPIPS(net='alex').to(device) # best forward scores
+    elif lpips_model == 'vgg':
+        lpips_loss_fn = lpips.LPIPS(net='vgg').to(device) # closer to "traditional" perceptual loss, when used for optimization
+
+    tensor1 = torch.as_tensor(img).permute(2, 0, 1)
+    tensor1 = tensor1.unsqueeze(0).to(device).float()/255
+    tensor2 = torch.as_tensor(img2).permute(2, 0, 1)
+    tensor2 = tensor2.unsqueeze(0).to(device).float()/255
+
+    lpips_loss = lpips_loss_fn(tensor1, tensor2).detach().item()
+    return lpips_loss

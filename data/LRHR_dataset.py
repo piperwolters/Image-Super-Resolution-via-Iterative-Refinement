@@ -18,10 +18,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import WeightedRandomSampler
-from torchvision.transforms import functional as trans_fn
 import glob
-
-totensor = torchvision.transforms.ToTensor()
 
 class CustomWeightedRandomSampler(WeightedRandomSampler):
     """
@@ -39,6 +36,15 @@ class CustomWeightedRandomSampler(WeightedRandomSampler):
         rand_tensor = torch.from_numpy(rand_tensor)
         return iter(rand_tensor.tolist())
 
+def has_black_pixels(tensor):
+    # Sum along the channel dimension to get a 2D tensor [height, width]
+    channel_sum = torch.sum(tensor, dim=0)
+
+    # Check if any pixel has a sum of 0, indicating black
+    black_pixels = (channel_sum.view(-1) == 0).any()
+
+    return black_pixels
+
 
 class LRHRDataset(Dataset):
     def __init__(self, dataroot, datatype, l_resolution=16, r_resolution=128, split='train', need_LR=False,
@@ -53,19 +59,23 @@ class LRHRDataset(Dataset):
         self.output_size = output_size
         self.max_tiles = max_tiles
         self.use_3d = use_3d
+        
+        self.s2_bands = ['tci']
 
+        print("DATATYPE:", self.datatype)
         print("OUTPUT_SIZE:", self.output_size)
         print("DATAROOT:", dataroot)
+        print("NUM LR IMAGES:", self.n_s2_images)
 
-        # WorldStrat case
+        ### WorldStrat case
         if datatype == 'worldstrat':
             self.all_bands = False
             self.use_3d = False
 
             # Hardcoded paths to data and splits
-            self.splits_csv = '/data/piperw/worldstrat/dataset/stratified_train_val_test_split.csv'
-            self.lr_path = '/data/piperw/worldstrat/dataset/dataset_download/zenodo-version/lr_dataset/'
-            self.hr_path = '/data/piperw/worldstrat/dataset/dataset_download/zenodo-version/hr_dataset/'
+            self.splits_csv = dataroot + 'stratified_train_val_test_split.csv'
+            self.lr_path = dataroot + 'lr_dataset/'
+            self.hr_path = dataroot + 'hr_dataset/'
 
             # Read in the csv file containing splits and filter out non-relevant images for this split.
             # Build a list of [hr_path, [lr_paths]] lists. 
@@ -84,7 +94,7 @@ class LRHRDataset(Dataset):
                         continue
 
                     # A few paths are missing even though specified in the split csv, so skip them.
-                    if not os.path.exists((os.path.join(self.lr_path, tile, 'L2A', tile+'-'+str(1)+'-L2A_data.tiff'))):
+                    if not os.path.exists((os.path.join(self.lr_path, tile, 'L1C', tile+'-'+str(1)+'-L1C_data.tiff'))):
                         continue
 
                     # HR image for the current datapoint. Still using rgb as ground truth (instead of pansharpened).
@@ -93,13 +103,16 @@ class LRHRDataset(Dataset):
                     # Each HR image has 16 corresponding LR images.
                     lrs = []
                     for img in range(1, int(self.n_s2_images)+1):
-                        lr_img_path = os.path.join(self.lr_path, tile, 'L2A', tile+'-'+str(img)+'-L2A_data.tiff')
+                        lr_img_path = os.path.join(self.lr_path, tile, 'L1C', tile+'-'+str(img)+'-L1C_data.tiff')
                         lrs.append(lr_img_path)
 
                     self.datapoints.append([hr_img_path, lrs])
+
                 print("Loaded ", len(self.datapoints), " WorldStrat datapoints.")
                 self.data_len = len(self.datapoints)
             return
+
+        ### SEN2VENUS case
         elif datatype == 'sen2venus':
             self.output_size = 256
             data_root = '/data/piperw/data/sen2venus/' 
@@ -122,8 +135,10 @@ class LRHRDataset(Dataset):
             print("Loaded ", len(self.datapoints), " SEN2Venus datapoints.")
             self.data_len = len(self.datapoints)
             return
+
+        ### OLI2MSI case
         elif datatype == 'oli2msi':
-            self.output_size = 480
+            self.output_size = 160  # full-res output size is 480, but training on chunks
             self.data_root = '/data/piperw/data/OLI2MSI/'
 
             if self.split == 'train':
@@ -141,8 +156,9 @@ class LRHRDataset(Dataset):
             self.data_len = len(self.datapoints)
             return
 
+        ### PROBA-V case
         elif datatype == 'probav':
-            self.output_size = 120
+            self.output_size = 120  # full-res output size is 384, but training on chunks
             self.data_root = '/data/piperw/data/PROBA-V/'
 
             hr_fps = glob.glob(self.data_root + 'train/NIR/*/HR.png')
@@ -169,103 +185,35 @@ class LRHRDataset(Dataset):
             self.data_len = len(self.datapoints)
             return
 
-        # Paths to the imagery.
-        self.s2_path = os.path.join(dataroot, 's2_condensed')
-        if self.output_size == 512:
-            self.naip_path = os.path.join(dataroot, 'naip')
-        elif self.output_size == 256:
-            self.naip_path = os.path.join(dataroot, 'naip_256')
-        elif self.output_size == 128:
-            self.naip_path = os.path.join(dataroot, 'naip_128')
-        elif self.output_size == 64:
-            self.naip_path = os.path.join(dataroot, 'naip_64')
-        elif self.output_size == 32:
-            self.naip_path = os.path.join(dataroot, 'naip_32')
-        else:
-            print("WARNING: output size not supported yet.")
+        ### S2-NAIP case
+        elif datatype == 's2naip':
+            # Paths to Sentinel-2 and NAIP imagery.
+            self.s2_path = dataroot + 'sentinel2/'
+            self.naip_path = dataroot + 'naip/'
+            if not (os.path.exists(self.s2_path) and os.path.exists(self.naip_path)):
+                raise Exception("Please make sure the paths to the data directories are correct.")
 
-        # Load in the list of naip images that we want to use for val.
-        specify_val = True
-        self.val_fps = []
-        if specify_val:
-            val_fps_f = open('held_out.txt')
-            val_fps = val_fps_f.readlines()
-            for fp in val_fps:
-                fp = fp[:-1]
-                self.val_fps.append(os.path.join(self.naip_path, fp))
+            self.naip_chips = glob.glob(self.naip_path + '/**/*.png', recursive=True)
 
-        self.naip_chips = glob.glob(self.naip_path + '/**/*.png', recursive=True)
+            # Reduce the training set down to a specified number of samples. If not specified, whole set is used.
+            #if self.split == 'train':
+            #    self.naip_chips = random.sample(self.naip_chips, 11000)
 
-        # NOTE: temporary code to train on just 1/100th of the available data
-        #if self.split == 'train':
-        #    self.naip_chips = random.sample(self.naip_chips, 11000)
-
-        print("self.naip chips:", len(self.naip_chips), " self.naip_path:", self.naip_path)
-
-        # Conditioning on S2.
-        if datatype == 's2' or datatype == 's2_and_downsampled_naip' or datatype == 'just-s2':
+            print("self.naip chips:", len(self.naip_chips), " self.naip_path:", self.naip_path)
 
             self.datapoints = []
             for n in self.naip_chips:
-
-		# If this is the train dataset, ignore the subset of images that we want to use for validation.
-                if self.split == 'train' and specify_val and (n in self.val_fps):
-                    print("split == train and n in val_fps, skipping....")
-                    continue
-		# If this is the validation dataset, ignore any images that aren't in the subset.
-                if self.split == 'val' and specify_val and not (n in self.val_fps):
-                    continue
-
-                # ex. /data/first_ten_million/naip/m_2808033_sw_17_060_20191202/tci/36046_54754.png
+                # Extract the X,Y chip from this NAIP image filepath.
                 split_path = n.split('/')
-                chip = split_path[-1][:-4]
-                tile = int(chip.split('_')[0]) // 16, int(chip.split('_')[1]) // 16
-                s2_left_corner = tile[0] * 16, tile[1] * 16
-                diffs = int(chip.split('_')[0]) - s2_left_corner[0], int(chip.split('_')[1]) - s2_left_corner[1]
+                chip = split_path[-2]
 
-                s2_path = os.path.join(self.s2_path, str(tile[0])+'_'+str(tile[1]), str(diffs[1])+'_'+str(diffs[0])+'.png')
+                # Gather the filepaths to the Sentinel-2 bands specified in the config.
+                s2_paths = [os.path.join(self.s2_path, chip, band + '.png') for band in self.s2_bands]
 
-                self.datapoints.append([n, s2_path])
-
-                # Only add 'max_tiles' datapoints to the datapoints list if specified.
-                if self.max_tiles != -1 and len(self.datapoints) >= self.max_tiles:
-                    break
+                self.datapoints.append([n, s2_paths])
 
             self.data_len = len(self.datapoints)
-
-        # NAIP reconstruction, build downsampled version on-the-fly.
-        elif datatype == 'naip':
-
-            # Build list of NAIP chip paths.
-            self.datapoints = []
-            for n in self.naip_chips:
-
-                # If this is the train dataset, ignore the subset of images that we want to use for validation.
-                if self.split == 'train' and self.specify_val and (naip_path in self.val_fps):
-                    continue
-                # If this is the validation dataset, ignore any images that aren't in the subset.
-                if self.split == 'val' and self.specify_val and not (naip_path in self.val_fps):
-                    continue
-
-                self.datapoints.append(n)
-            self.data_len = len(self.datapoints)
-
-        elif datatype == 'img':
-            self.sr_path = Util.get_paths_from_images(
-                '{}/sr_{}_{}'.format(dataroot, l_resolution, r_resolution))
-            self.hr_path = Util.get_paths_from_images(
-                '{}/hr_{}'.format(dataroot, r_resolution))
-            if self.need_LR:
-                self.lr_path = Util.get_paths_from_images(
-                    '{}/lr_{}'.format(dataroot, l_resolution))
-            self.dataset_len = len(self.hr_path)
-            if self.data_len <= 0:
-                self.data_len = self.dataset_len
-            else:
-                self.data_len = min(self.data_len, self.dataset_len)
-        else:
-            raise NotImplementedError(
-                'data_type [{:s}] is not recognized.'.format(datatype))
+            print("Loaded ", len(self.datapoints), " S2NAIP datatpoints.")
 
     def get_tile_weight_sampler(self, tile_weights):
         weights = []
@@ -285,7 +233,6 @@ class LRHRDataset(Dataset):
                 weights.append(tile_weights[chip])
 
         print('using tile_weight_sampler, min={} max={} mean={}'.format(min(weights), max(weights), np.mean(weights)))
-        #return torch.utils.data.WeightedRandomSampler(weights, len(self.datapoints))
         return CustomWeightedRandomSampler(weights, len(self.datapoints))
 
     def __len__(self):
@@ -296,12 +243,12 @@ class LRHRDataset(Dataset):
         img_LR = None
 
         # Classifier-free guidance, X% of the time we want to replace S2 images with black images 
-        # for "unconditional" generation during training. 
-        cfg = random.randint(0, 19)
+        # for "unconditional" generation during training. NOTE: currently hardcoded
+        cfg = 5 # random.randint(0, 19)
         uncond = True if self.split == 'train' and cfg in [0,1,2,3] else False
 
-        # Conditioning on S2, or S2 and downsampled NAIP.
-        if self.datatype == 's2' or self.datatype == 's2_and_downsampled_naip' or self.datatype == 'just-s2':
+        # S2NAIP
+        if self.datatype == 's2naip':
 
             # A while loop and try/excepts to catch a few potential errors and continue if caught.
             counter = 0
@@ -311,166 +258,115 @@ class LRHRDataset(Dataset):
                     index = 0
 
                 datapoint = self.datapoints[index]
-                naip_path, s2_path = datapoint[0], datapoint[1]
+                naip_path, s2_paths = datapoint[0], datapoint[1]
 
-                # Load the 512x512 NAIP chip.
-                naip_chip = cv2.imread(naip_path)
-                #naip_chip = skimage.io.imread(naip_path)
+                # Load the 128x128 NAIP chip in as a tensor of shape [channels, height, width].
+                naip_chip = torchvision.io.read_image(naip_path)
 
                 # Check for black pixels (almost certainly invalid) and skip if found.
-                if [0, 0, 0] in naip_chip:
+                if has_black_pixels(naip_chip):
                     counter += 1
-                    #print(naip_path, " contains invalid pixels.")
                     continue
+                img_HR = naip_chip
 
-                # Load the T*32x32 S2 file.
-                # There are a few bad S2 paths, if caught then skip to the next one.
+                # Load the T*32x32xC S2 files for each band in as a tensor.
+                # There are a few rare cases where loading the Sentinel-2 image fails, skip if found.
                 try:
-                    s2_images = cv2.imread(s2_path)
-                    #s2_images = skimage.io.imread(s2_path)
+                    s2_tensor = None
+                    for i,s2_path in enumerate(s2_paths):
+
+                        # There are tiles where certain bands aren't available, use zero tensors in this case.
+                        if not os.path.exists(s2_path):
+                            img_size = (self.n_s2_images, 3, 32, 32) if 'tci' in s2_path else (self.n_s2_images, 1, 32, 32)
+                            s2_img = torch.zeros(img_size, dtype=torch.uint8)
+                        else:
+                            s2_img = torchvision.io.read_image(s2_path)
+                            s2_img = torch.reshape(s2_img, (-1, s2_img.shape[0], 32, 32))
+
+                        # Upsample the low-res image to the size of the desired super-res size.
+                        s2_img = F.interpolate(s2_img, (128, 128))
+
+                        if i == 0:
+                            s2_tensor = s2_img
+                        else:
+                            s2_tensor = torch.cat((s2_tensor, s2_img), dim=1)
                 except:
-                    print(s2_path, " failed to load correctly.")
                     counter += 1
                     continue
 
-                # Reshape to be Tx32x32.
-                s2_chunks = np.reshape(s2_images, (-1, 32, 32, 3))
+                # Skip the cases when there are not as many Sentinel-2 images as requested.
+                if s2_tensor.shape[0] < self.n_s2_images:
+                    counter += 1
+                    continue
 
-                # SPECIAL CASE: when we are running a S2 upsampling experiment, sample 1 more 
-                # S2 image than specified. We'll use that as our "high res" image and the rest 
-                # as conditioning. Because the min number of S2 images is 18, have to use 17 for time series.
-                if self.datatype == 'just-s2':
-                    rand_indices = random.sample(range(0, len(s2_chunks)), self.n_s2_images)
-                    s2_chunks = [s2_chunks[i] for i in rand_indices[1:]]
-                    s2_chunks = np.array(s2_chunks)
-                    naip_chip = s2_chunks[0]  # this is a fake naip chip
-
-                else:
-                    # Iterate through the 32x32 chunks at each timestep, separating them into "good" (valid)
-                    # and "bad" (partially black, invalid). Will use these to pick best collection of S2 images.
-                    goods, bads = [], []
-                    for i,ts in enumerate(s2_chunks):
-                        if [0, 0, 0] in ts:
-                            bads.append(i)
-                        else:
-                            goods.append(i)
-
-                    # Pick 18 random indices of s2 images to use. Skip ones that are partially black.
-                    if len(goods) >= self.n_s2_images:
-                        rand_indices = random.sample(goods, self.n_s2_images)
+                # Iterate through the 32x32 tci chunks at each timestep, separating them into "good" (valid)
+                # and "bad" (partially black, invalid). Will use these to pick best collection of S2 images.
+                tci_chunks = s2_tensor[:, :3, :, :]
+                goods, bads = [], []
+                for i,ts in enumerate(tci_chunks):
+                    if has_black_pixels(ts):
+                        bads.append(i)
                     else:
-                        need = self.n_s2_images - len(goods)
-                        rand_indices = goods + random.sample(bads, need)
+                        goods.append(i)
 
-                    s2_chunks = [s2_chunks[i] for i in rand_indices]
-                    s2_chunks = np.array(s2_chunks)
+                # Pick self.n_s2_images random indices of S2 images to use. Skip ones that are partially black.
+                if len(goods) >= self.n_s2_images:
+                    rand_indices = random.sample(goods, self.n_s2_images)
+                else:
+                    need = self.n_s2_images - len(goods)
+                    rand_indices = goods + random.sample(bads, need)
+                rand_indices_tensor = torch.as_tensor(rand_indices)
 
-                    # Convert to torch so we can do some reupsampling.
-                    up_s2_chunk = torch.permute(torch.from_numpy(s2_chunks), (0, 3, 1, 2))
+                # Extract the self.n_s2_images from the first dimension.
+                img_S2 = s2_tensor[rand_indices_tensor]
 
-                    # Upsampling Option 1: Bicubic interpolation for the upsampling of the S2 chunks.
-                    up_s2_chunk = trans_fn.resize(up_s2_chunk, self.output_size, Image.BICUBIC, antialias=True)
+                # If using a model that expects 5 dimensions, we will not reshape to 4 dimensions.
+                if not self.use_3d:
+                    img_S2 = torch.reshape(img_S2, (-1, 128, 128))
 
-                    # Upsampling Option 2: Nearest Neighbor upsampling of the S2 chunks.
-                    #up_s2_chunk = torch.repeat_interleave(up_s2_chunk, repeats=2, dim=2)
-                    #up_s2_chunk = torch.repeat_interleave(up_s2_chunk, repeats=2, dim=3)
-
-                    s2_chunks = torch.permute(up_s2_chunk, (0, 2, 3, 1)).numpy()
                 break
 
-            # If conditioning on downsampled naip (along with S2), need to downsample original NAIP datapoint and upsample
-            # it to get it to the size of the other inputs.
-            if self.datatype == 's2_and_downsampled_naip':
-                downsampled_naip = cv2.resize(naip_chip, dsize=(self.downsample_res,self.downsample_res), interpolation=cv2.INTER_CUBIC)
-                downsampled_naip = cv2.resize(downsampled_naip, dsize=(self.output_size, self.output_size), interpolation=cv2.INTER_CUBIC)
-
-                if len(s2_chunks) == 1:
-                    s2_chunk = s2_chunks[0]
-
-                    [s2_chunk, downsampled_naip, naip_chip] = Util.transform_augment(
-                                                   [s2_chunk, downsampled_naip, naip_chip], split=self.split, min_max=(-1, 1))
-                    img_SR = torch.cat((s2_chunk, downsampled_naip))
-                    img_HR = naip_chip
-                else:
-                    print("TO BE IMPLEMENTED")
-                    [s2_chunks, downsampled_naip, naip_chip] = Util.transform_augment(
-                                                    [s2_chunks, downsampled_naip, naip_chip], split=self.split, min_max=(-1, 1), multi_s2=True)
-                    img_SR = torch.cat((torch.stack(s2_chunks), downsampled_naip))
-                    img_HR = naip_chip
-
-            elif self.datatype == 's2' or self.datatype == 'just-s2':
-
-                if len(s2_chunks) == 1:
-                    s2_chunk = s2_chunks[0]
-
-                    [img_SR, img_HR] = Util.transform_augment(
-				    [s2_chunk, naip_chip], split=self.split, min_max=(-1, 1))
-                else:
-                    [s2_chunks, img_HR] = Util.transform_augment(
-                                    [s2_chunks, naip_chip], split=self.split, min_max=(-1, 1), multi_s2=True)
-
-                    if self.use_3d:
-                        img_SR = torch.stack(s2_chunks)
-                    else:
-                        img_SR = torch.cat(s2_chunks)
+            img_S2 = img_S2.float() / 255
+            img_HR = img_HR.float() / 255
 
             # Classifier-free guidance step, replace S2 images with all black images.
             if uncond:
-                img_SR = torch.zeros_like(img_SR)
+                img_S2 = torch.zeros_like(img_S2)
 
-            return {'HR': img_HR, 'SR': img_SR, 'Index': index}
-
-        elif self.datatype == 'naip':
-            naip_path = self.datapoints[index]
-
-            # Load the 512x512 NAIP chip.
-            naip_chip = skimage.io.imread(naip_path)
-
-            # Create the downsampled version on-the-fly. 
-            downsampled_naip = cv2.resize(naip_chip, dsize=(self.downsample_res,self.downsample_res), interpolation=cv2.INTER_CUBIC)
-            downsampled_naip = cv2.resize(downsampled_naip, dsize=(self.output_size, self.output_size), interpolation=cv2.INTER_CUBIC)
-
-            [img_SR, img_HR] = Util.transform_augment([downsampled_naip, naip_chip], split=self.split, min_max=(-1, 1))
-
-            return {'HR': img_HR, 'SR': img_SR, 'Index': index}
+            return {'HR': img_HR, 'SR': img_S2, 'Index': index}
 
         elif self.datatype == 'worldstrat':
             hr_path, lr_paths = self.datapoints[index]
 
-            # High res
-            #hr_im = skimage.io.imread(hr_path)[:, :, 0:3]
-            hr_im = cv2.imread(hr_path)[:, :, 0:3]
-            hr_im = cv2.resize(hr_im, (640, 640)) # NOTE: temporarily downsizing the HR image to match the SR image
-            hr_im = totensor(hr_im)
-            img_HR = hr_im
+            hr_im = torchvision.io.read_image(hr_path)[0:3, :, :]  # remove alpha channel
+            img_HR = F.interpolate(hr_im, 640) # resize the HR image to match the SR image
 
-	    # Load each of the LR images with gdal, since they're tifs.
+            # Load each of the LR images with gdal, since they're tifs.
             lr_ims = []
             for lr_path in lr_paths:
                 raster = gdal.Open(lr_path)
                 array = raster.ReadAsArray()
-
-                # If all_bands is specified, trying to replicate exact WorldStrat methodology,
-                # otherwise have option to run on RGB.
-                if self.all_bands:
-                    lr_im = array.transpose(1, 2, 0)
-                    lr_im = self.lr_transform(lr_im)
-                else:
-                    lr_im = array.transpose(1, 2, 0)[:, :, 1:4]
-
+                lr_im = array.transpose(1, 2, 0)[:, :, 1:4]  # only using RGB bands (bands 2,3,4)
+                lr_im = torch.permute(torch.tensor(cv2.resize(lr_im, (160,160))), (2, 1, 0))
                 lr_ims.append(lr_im)
 
-            if not self.all_bands:
-                # Resize each Sentinel-2 image to the same spatial dimension.
-                lr_ims = [totensor(cv2.resize(im, (640,640))) for im in lr_ims]
-
+            # Resize each Sentinel-2 image to the same spatial dimension. Then stack along first dimension.
             img_LR = torch.stack(lr_ims, dim=0)
-            if not self.use_3d:
-                img_LR = torch.reshape(img_LR, (-1, 640,640))
 
-            # Classifier-free guidance step, replace S2 images with all black images.
-            if uncond:
-                img_LR = torch.zeros_like(img_LR)
+            # Find a random 160x160 HR chunk, to create more, smaller training samples.
+            hr_start_x = random.randint(0, 640-160)
+            hr_start_y = random.randint(0, 640-160)
+            lr_start_x = hr_start_x // 4
+            lr_start_y = hr_start_y // 4
+
+            img_HR = img_HR[:, hr_start_x:hr_start_x+160, hr_start_y:hr_start_y+160]
+            img_LR = img_LR[:, :, lr_start_x:lr_start_x+40, lr_start_y:lr_start_y+40]
+
+            img_LR = F.interpolate(img_LR, (160,160))
+            img_LR = torch.reshape(img_LR, (-1, 160, 160))
+
+            img_HR = img_HR.float() / 255
+            img_LR = img_LR.float()
 
             return {'HR': img_HR, 'SR': img_LR, 'Index': index}
 
@@ -491,66 +387,58 @@ class LRHRDataset(Dataset):
         elif self.datatype == 'oli2msi':
             hr_path, lr_path = self.datapoints[index]
 
+            # Load the 480x840 high-res image.
             hr_ds = gdal.Open(hr_path)
             hr_arr = np.array(hr_ds.ReadAsArray())
-            hr_arr = np.transpose(cv2.resize(np.transpose(hr_arr, (1, 2, 0)), (320, 320)), (2, 0, 1))
-            hr_tensor = torch.tensor(hr_arr).float()
+            hr_tensor = torch.tensor(hr_arr)
 
+            # Load the 160x160 low-res image.
             lr_ds = gdal.Open(lr_path)
             lr_arr = np.array(lr_ds.ReadAsArray())
-            lr_tensor = torch.tensor(lr_arr).float()
-            lr_tensor = F.interpolate(lr_tensor.unsqueeze(0), (320, 320)).squeeze(0)
+            lr_tensor = torch.tensor(lr_arr)
 
-            if self.use_3d:
-                lr_tensor = lr_tensor.unsqueeze(0)
+            # Find a random 120x120 HR chunk, to create more, smaller training samples.
+            # Reshape the 120x120 chunk up to 160x160 so our 4x training module will work.
+            hr_start_x = random.randint(0, 480-120)
+            hr_start_y = random.randint(0, 480-120)
+            lr_start_x = int(hr_start_x // 3)
+            lr_start_y = int(hr_start_y // 3)
 
-            img_HR = hr_tensor
-            img_LR = lr_tensor
+            hr_tensor = hr_tensor[:, hr_start_x:hr_start_x+120, hr_start_y:hr_start_y+120]
+            lr_tensor = lr_tensor[:, lr_start_x:lr_start_x+40, lr_start_y:lr_start_y+40]
+
+            hr_tensor = F.interpolate(hr_tensor.unsqueeze(0), (160,160)).squeeze(0)
+            lr_tensor = F.interpolate(lr_tensor.unsqueeze(0), (160,160)).squeeze(0)  # upsample to desired output size
+
+            img_HR = hr_tensor.float()
+            img_LR = lr_tensor.float()
             return {'HR': img_HR, 'SR': img_LR, 'Index': index}
 
         elif self.datatype == 'probav':
             hr_path, lr_paths  = self.datapoints[index]
 
             hr_im = cv2.imread(hr_path)
-            
-            # Take a random 32,32 chunk; Goal will be to upsample by x2.
-            rand_start_x = random.randint(0, 255)
-            rand_start_y = random.randint(0, 255)
-            hr_im = hr_im[rand_start_x:rand_start_x+128, rand_start_y:rand_start_y+128, :]
 
-            hr_tensor = totensor(hr_im)
+            # Take a random 120x120 HR chunk; Reshape the 120x120 chunk up to 160x160 so our 4x training module will work.
+            rand_start_x = random.randint(0, 263)
+            rand_start_y = random.randint(0, 263)
+            hr_im = hr_im[rand_start_x:rand_start_x+120, rand_start_y:rand_start_y+120, :]
+            hr_tensor = torch.permute(torch.tensor(hr_im), (2, 0, 1))
+            img_HR = F.interpolate(hr_tensor.unsqueeze(0), (160,160)).squeeze(0)
 
-            lr_start_x = int(rand_start_x // 4)
-            lr_start_y = int(rand_start_y // 4)
+            lr_start_x = int(rand_start_x // 3)
+            lr_start_y = int(rand_start_y // 3)
 
             lr_ims = []
             for lr_path in lr_paths:
                 lr_im = cv2.imread(lr_path)
-                lr_im = lr_im[lr_start_x:lr_start_x+32, lr_start_y:lr_start_y+32, :]
-                lr_im = cv2.resize(lr_im, (128,128))
-                lr_tensor = totensor(lr_im)
+                lr_im = lr_im[lr_start_x:lr_start_x+40, lr_start_y:lr_start_y+40, :]
+                lr_im = cv2.resize(lr_im, (160,160))
+                lr_tensor = torch.permute(torch.tensor(lr_im), (2, 0, 1))
                 lr_ims.append(lr_tensor)
+            img_LR = torch.cat(lr_ims)
 
-            if self.use_3d:
-                img_LR = torch.stack(lr_ims)
-            else:
-                img_LR = torch.cat(lr_ims)
-
-            img_HR = hr_tensor
+            img_HR = img_HR.float() / 255
+            img_LR = img_LR.float() / 255
 
             return {'HR': img_HR, 'SR': img_LR, 'Index': index}
-
-        else:
-            img_HR = Image.open(self.hr_path[index]).convert("RGB")
-            img_SR = Image.open(self.sr_path[index]).convert("RGB")
-            if self.need_LR:
-                img_LR = Image.open(self.lr_path[index]).convert("RGB")
-
-        if self.need_LR:
-            [img_LR, img_SR, img_HR] = Util.transform_augment(
-                [img_LR, img_SR, img_HR], split=self.split, min_max=(-1, 1))
-            return {'LR': img_LR, 'HR': img_HR, 'SR': img_SR, 'Index': index}
-        else:
-            [img_SR, img_HR] = Util.transform_augment(
-                [img_SR, img_HR], split=self.split, min_max=(-1, 1))
-            return {'HR': img_HR, 'SR': img_SR, 'Index': index}

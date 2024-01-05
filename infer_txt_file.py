@@ -91,23 +91,20 @@ if __name__ == "__main__":
     if 'oli2msi' in data_txt:
         datatype = 'oli2msi'
         base_path = '/data/piperw/data/OLI2MSI/'
-        save_path = '/data/piperw/cvpr_outputs/oli2msi/'
+        save_path = '/data/piperw/sr3_outputs/oli2msi/'
     elif 'sen2venus' in data_txt:
         sen2venus_counter = 0
         datatype = 'sen2venus'
         base_path = '/data/piperw/data/sen2venus/'
-        save_path = '/data/piperw/cvpr_outputs/sen2venus/'
-    elif 'held_out_txt' in data_txt:
+        save_path = '/data/piperw/sr3_outputs/sen2venus/'
+    elif 's2naip' in data_txt:
         datatype = 'naip-s2'
-        base_path = '/data/piperw/data/held_out_set/'
-        save_path = '/data/piperw/cvpr_outputs/held_out_set/'
+        base_path = '/data/piperw/data/ssr_data/small_val_set/'
+        save_path = '/data/piperw/sr3_outputs/s2naip/'
     elif 'probav' in data_txt:
         datatype = 'probav'
         base_path = '/data/piperw/data/PROBA-V/train/NIR/val/'
-        save_path = '/data/piperw/cvpr_outputs/probav/'
-    else:
-        datatype = 'naip-s2'
-        base_path = '/data/piperw/data/val_set/'
+        save_path = '/data/piperw/sr3_outputs/probav/'
     print("Datatype:", datatype)
 
     n_s2_images = 9
@@ -118,7 +115,7 @@ if __name__ == "__main__":
 
         png = png.replace('\n', '')
 
-        if datatype == 'naip-s2':
+        if datatype == 's2naip':
 
             # Want to save the super-resolved imagery in the same filepath structure 
             # as the Sentinel-2 imagery, but in a different directory specified by args.save_path
