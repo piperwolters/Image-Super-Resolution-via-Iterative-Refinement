@@ -99,29 +99,11 @@ class DDPM(BaseModel):
 
     def get_current_visuals(self, need_LR=True, sample=False, datatype='img'):
         out_dict = OrderedDict()
-        if datatype == 'img':
-            out_dict['SR'] = self.SR.detach().float().cpu()
-            out_dict['INF'] = self.data['SR'].detach().float().cpu()
-            out_dict['HR'] = self.data['HR'].detach().float().cpu()
-            if need_LR and 'LR' in self.data:
-                out_dict['LR'] = self.data['LR'].detach().float().cpu()
-            else:
-                out_dict['LR'] = out_dict['INF']
-        elif datatype == 's2' or datatype == 'just-s2': 
+        if datatype == 's2naip': 
             s2 = self.data['SR']
             out_dict['S2'] = s2.detach().float().cpu()
             out_dict['SR'] = self.SR.detach().float().cpu()  # self.SR is the generated Superresolution
             out_dict['HR'] = self.data['HR'].detach().float().cpu()  # self.data['HR'] is the original ground truth, high-res image
-        elif datatype == 's2_and_downsampled_naip':
-            s2, downsampled_naip = self.data['SR'][:, :3, :, :], self.data['SR'][:, 3:, :, :]
-            out_dict['S2'] = s2.detach().float().cpu()
-            out_dict['Downsampled_NAIP'] = downsampled_naip.detach().float().cpu()
-            out_dict['SR'] = self.SR.detach().float().cpu()
-            out_dict['HR'] = self.data['HR'].detach().float().cpu()
-        elif datatype == 'naip':
-            out_dict['Downsampled_NAIP'] = self.data['SR'].detach().float().cpu()
-            out_dict['SR'] = self.SR.detach().float().cpu()
-            out_dict['HR'] = self.data['HR'].detach().float().cpu()
         elif datatype == 'worldstrat':
             s2 = self.data['SR']
             out_dict['S2'] = s2.squeeze(0).detach().float().cpu()[0:3, :, :]

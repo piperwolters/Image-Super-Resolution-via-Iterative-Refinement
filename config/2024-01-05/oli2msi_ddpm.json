@@ -2,7 +2,7 @@
     "name": "oli2msi_ddpm",
     "phase": "train", // train or val
     "gpu_ids": [
-        0
+        0,1,2,3
     ],
     "path": { //set the path
         "log": "experiments/2024-01-05/oli2msi_ddpm/logs",
@@ -73,7 +73,7 @@
     },
     "train": {
         "n_iter": 10000000,
-        "val_freq": 5e5,
+        "val_freq": 5e6,
         "save_checkpoint_freq": 5e3,
         "print_freq": 1000,
         "optimizer": {

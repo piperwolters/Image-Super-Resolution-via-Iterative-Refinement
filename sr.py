@@ -128,8 +128,6 @@ if __name__ == "__main__":
                 diffusion.feed_data(train_data)
                 diffusion.optimize_parameters()
 
-                print("current step:", current_step)
-
                 # log
                 if current_step % opt['train']['print_freq'] == 0:
                     logs = diffusion.get_current_log()
@@ -162,37 +160,8 @@ if __name__ == "__main__":
 
                         visuals = diffusion.get_current_visuals(datatype=datatype)
 
-                        # LSUN and NAIP reconstruction experiments.
-                        if datatype == 'img':
-                            sr_img = Metrics.tensor2img(visuals['SR'])  # uint8
-                            hr_img = Metrics.tensor2img(visuals['HR'])  # uint8
-                            lr_img = Metrics.tensor2img(visuals['LR'])  # uint8
-                            fake_img = Metrics.tensor2img(visuals['INF'])  # uint8
-
-                            Metrics.save_img(
-				hr_img, '{}/{}_{}_hr.png'.format(result_path, current_step, idx))
-                            Metrics.save_img(
-				sr_img, '{}/{}_{}_sr.png'.format(result_path, current_step, idx))
-                            Metrics.save_img(
-				lr_img, '{}/{}_{}_lr.png'.format(result_path, current_step, idx))
-                            Metrics.save_img(
-				fake_img, '{}/{}_{}_inf.png'.format(result_path, current_step, idx))
-
-                        # NAIP reconstruction.
-                        elif datatype == 'naip':
-                            sr_img = Metrics.tensor2img(visuals['SR'])  # uint8
-                            hr_img = Metrics.tensor2img(visuals['HR'])  # uint8
-                            fake_img = Metrics.tensor2img(visuals['Downsampled_NAIP'])  # uint8
-
-                            Metrics.save_img(
-                                hr_img, '{}/{}_{}_hr.png'.format(result_path, current_step, idx))
-                            Metrics.save_img(
-                                sr_img, '{}/{}_{}_sr.png'.format(result_path, current_step, idx))
-                            Metrics.save_img(
-                                fake_img, '{}/{}_{}_downsampled_naip.png'.format(result_path, current_step, idx))
-
                         # NAIP generation based on S2 conditioning.
-                        elif datatype == 's2' or datatype == 'just-s2':
+                        if datatype == 's2naip':
                             sr_img = Metrics.tensor2img(visuals['SR'])  
                             hr_img = Metrics.tensor2img(visuals['HR'])  
                             s2_img = Metrics.tensor2img(visuals['S2'])
@@ -215,21 +184,6 @@ if __name__ == "__main__":
                                     fake_img = s2_img
                                     Metrics.save_img(s2_img, '{}/{}_{}_s2.png'.format(result_path, current_step, idx))
 
-                        # NAIP generation based on S2 + downsampled NAIP conditioning.
-                        elif datatype == 's2_and_downsampled_naip':
-                            sr_img = Metrics.tensor2img(visuals['SR'])  
-                            hr_img = Metrics.tensor2img(visuals['HR'])  
-                            s2_img = Metrics.tensor2img(visuals['S2'])
-                            fake_img = s2_img
-                            downsampled_naip_img = Metrics.tensor2img(visuals['Downsampled_NAIP'])
-
-                            Metrics.save_img(
-				hr_img, '{}/{}_{}_hr.png'.format(result_path, current_step, idx))
-                            Metrics.save_img(
-				sr_img, '{}/{}_{}_sr.png'.format(result_path, current_step, idx))
-                            Metrics.save_img(s2_img, '{}/{}_{}_s2.png'.format(result_path, current_step, idx))
-                            Metrics.save_img(downsampled_naip_img, '{}/{}_{}_downsampled_naip.png'.format(result_path, current_step, idx))
-
                         elif datatype == 'worldstrat':
                             sr_img = Metrics.tensor2img(visuals['SR'])
                             hr_img = Metrics.tensor2img(visuals['HR'])
@@ -244,11 +198,11 @@ if __name__ == "__main__":
                                 Metrics.save_img(s2_img, '{}/{}_{}_s2.png'.format(result_path, current_step, idx))
 
                         # generation
-                        tb_logger.add_image(
-                            'Iter_{}'.format(current_step),
-                            np.transpose(np.concatenate(
-                                (fake_img, sr_img, hr_img), axis=1), [2, 0, 1]),
-                            idx)
+                        #tb_logger.add_image(
+                        #    'Iter_{}'.format(current_step),
+                        #    np.transpose(np.concatenate(
+                        #        (fake_img, sr_img, hr_img), axis=1), [2, 0, 1]),
+                        #    idx)
                         #avg_psnr += Metrics.calculate_psnr(sr_img, hr_img)
 
                         # metric code from BasicSR
